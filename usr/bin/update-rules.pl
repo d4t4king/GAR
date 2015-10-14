@@ -2,6 +2,8 @@
 
 use strict;
 use warnings;
+no warnings 'experimental::smartmatch';
+use feature qw( switch );
 
 use lib "/usr/lib/smoothwall";
 use header qw( :standard );
@@ -10,14 +12,46 @@ use smoothtype qw( :standard );
 
 use Cwd;
 use File::Find;
+use Getopt::Long;
+use Term::ANSIColor qw( colored );
+
+my ($flag);
+GetOptions(
+	'R|rules-group=s'	=> \$flag,
+);
+
+sub show_help() {
+	print <<EOS;
+
+Usage: $0 [-R|--rules-group] (ET|VRT|VRTC) [-h|--help]
+
+-h|--help			Display this useful message.
+-R|--rules-group		Specifies the rules group to be updated.  This 
+				can be one of the following:
+					ET:	Emerging Threats (emergingthreats.net)
+					VRTC:	Snort VRT Community rules
+					VRT:	Snort VRT Registered user/Subscriber rules*
+	
+* Paid subscriber rules may have yet another flag in the future (if this one doesn't match the ruleset
+
+EOS
+
+}
+
+# If we gpo any farther without the flag defined, we're just wasting memory.
+if ((!defined($flag)) || ($flag eq '')) { &show_help() && die colored("\n-R option required to specify rule group to update.  See help.\n", "red"); }
 
 our @months = qw( Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec );
 our @weekDays = qw( Sun Mon Tue Wed Thu Fri Sat );
 
 my $GAR_Home_dir = "$swroot/mods/GAR";
-our $ET_ruleage = "$swroot/snort/ET_ruleage";
-our $logfile = "/var/log/snort/autoupdate-ET.log";
-my $tmpdir = "/tmp/ET-tmp";
+our %Ruleage = (
+	'ET'	=> "$swroot/snort/ET_ruleage",
+	'VRTC'	=> "$swroot/snort/VRTC_ruleage",
+	'VRT'	=> "$swroot/snort/VRT_ruleage",
+);
+our $logfile = "/var/log/snort/autoupdate-rules.log";
+our $tmpdir = "/tmp/tmp";
 
 sub write_log() {
 	my $message = shift(@_);
@@ -35,27 +69,50 @@ sub write_log() {
 # Note 2: This is probably better handled with Date::Calc, but
 # I will leave, as is, for the time being.
 sub get_the_time() {
+	# return a simplified date, if called from the add_tor_routers funtion
+	my $flag = shift(@_);
 	my ($second, $minute, $hour, $dayOfMonth, $monthIndex, $yearOffset, $dayOfWeekIndex, $dayOfYear, $dayLightSavings) = localtime();
 	my $year = 1900 + $yearOffset;
 	if ($dayOfMonth < 10 ) { $dayOfMonth = "0$dayOfMonth"; }
-	if ($hour < 10) { $hour = "0$hour"; }
-	if ($minute < 10) { $minute = "0$minute"; }
-	if ($second < 10) { $second = "0$second"; }
-	my $theTime = "$weekDays[$dayOfWeekIndex] $months[$monthIndex] $dayOfMonth $year $hour:$minute:$second";
-	return $theTime;
+	if ($flag eq 'ADDTOR') {
+		# need to start counting from 1 here
+		# so bump the index a notch
+		$monthIndex++;
+		if ($monthIndex < 10) { $monthIndex = "0$monthIndex"; }
+		return "${year}${monthIndex}${dayOfMonth}";
+	} else {
+		if ($hour < 10) { $hour = "0$hour"; }
+		if ($minute < 10) { $minute = "0$minute"; }
+		if ($second < 10) { $second = "0$second"; }
+		my $theTime = "$weekDays[$dayOfWeekIndex] $months[$monthIndex] $dayOfMonth $year $hour:$minute:$second";
+		return $theTime;
+	}
 }
 
 sub get_newest() {
+	my $flag = shift(@_);
 	my $dir = shift(@_);
-	-d $dir or die "get_newest: '$dir' is not a directory...\n";
+	( -d $dir ) or die "get_newest: '$dir' is not a directory...\n";
 	our %files;
+	my $search_regex;
+	given($flag) {
+		when ('ET')		{ $search_regex = qr/emerging.*?\.rules/; }
+		when ('VRTC')	{ $search_regex = qr/comunity\.rules/; }
+		when ('VRT')	{ $search_regex = qr/.*\.rules/; }
+		default 		{ die "Unexpected rules group flag: $flag \n"; }
+	}
 	# my File::Find-fu is _VERY_ rusty, but this probably could be
 	# written even better.
 	File::Find::find(
 		sub {
 			my $name = $File::Find::name;
-			# we only want emerging*.rules files
-			if ($name =~ /emerging.*?\.rules/) {
+			# There may (should) be a better wayt to handle this.
+			# This is just an ugly hack since VRT rules
+			# includes everything EXCEPT local, "community" (VRTC),
+			# and "emerging.*" (ET) rules
+			if ($name =~ /$search_regex/x) {		
+				next if (($flag eq 'VRTC') && ($name =~ /^community\.rules/));
+				next if (($flag eq 'ET') && ($name =~ /^emerging.*\.rules/));
 				$files{$name} = (stat($name))[9]if ( -f $name );
 			}
 		}, $dir
@@ -68,14 +125,15 @@ sub get_newest() {
 }
 
 sub do_ruleage_closeout() {
+	my $flag = shift(@_);
 	my $newest_file = 'unknown';
-	&write_log("Updating $ET_ruleage file");
+	&write_log("Updating $Ruleage{$flag} file"); 
 	my $currentTime = &get_the_time();
 	&write_log("Collecting current update time: " . $currentTime );
 	&write_log("Storing update time: " . $currentTime );
-	open FILE, ">$ET_ruleage" or die "Couldn't open $ET_ruleage file for writing: $! \n";
+	open FILE, ">$Ruleage{$flag}" or die "Couldn't open $Ruleage{$flag} file for writing: $! \n";
 	print FILE "$currentTime";
-	close FILE or die "Couldn't close $ET_ruleage file: $! \n";
+	close FILE or die "Couldn't close $Ruleage{$flag} file: $! \n";
 	$newest_file = &get_newest("$swroot/snort/rules");
 	&write_log("Locating newest ET rules file: $newest_file");
 	my ($a_stamp, $m_stamp) = (stat($newest_file))[8,9];
@@ -83,16 +141,28 @@ sub do_ruleage_closeout() {
 	&write_log("  $a_stamp  $m_stamp");
 	&write_log("  ".scalar(localtime($a_stamp)));
 	&write_log("  ".scalar(localtime($m_stamp)));
-	&write_log("Storing time stamps to $ET_ruleage.");
-	utime $a_stamp, $m_stamp, $ET_ruleage;
-	&write_log("Verifying $ET_ruleage\'s time stamps:");
+	&write_log("Storing time stamps to $Ruleage{$flag}.");
+	utime $a_stamp, $m_stamp, $Ruleage{$flag};
+	&write_log("Verifying $Ruleage{$flag}\'s time stamps:");
 	undef($a_stamp); undef($m_stamp);
-	($a_stamp, $m_stamp) = (stat($ET_ruleage))[8,9];
+	($a_stamp, $m_stamp) = (stat($Ruleage{$flag}))[8,9];
 	&write_log("  $a_stamp  $m_stamp");
 	&write_log("  ".scalar(localtime($a_stamp)));
 	&write_log("  ".scalar(localtime($m_stamp)));
-	&write_log("Setting $ET_ruleage ownership to nobody:nobody");
-	chown('nobody', 'nobody', $ET_ruleage);
+	&write_log("Setting $Ruleage{$flag} ownership to nobody:nobody");
+	chown('nobody', 'nobody', $Ruleage{$flag});
+}
+
+sub add_tor_routers() {
+	my $sids_ref = shift(@_);
+	my $atr_date = &get_the_time('ADDTOR');
+	foreach my $sid ( @{$sids_ref} ) {
+		print "disablesid \$REPLY # $atr_date allow tor routers";
+	}
+}
+
+sub find_tor_routers() {
+	
 }
 
 &write_log("-------------------------------------------------------------------");
