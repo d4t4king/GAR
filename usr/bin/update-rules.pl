@@ -5,13 +5,13 @@ use warnings;
 # perl 5.10 and later is required for the 'use feature' feature.  This gives 
 # us "switch" and "say" functionality.  At this point, we really only care
 # about th "switch" (given/when) capability.
-require 5.010001;
-if ($OLD_PERL_VERSION -ge '5.018000') {
+require 5.010;
+#if ($] ge '5.018') {
 	# perl 5.18 and later considers "smarmatch" to be an experimental feature,
 	# and warns profusely, if warnings are enabled.  So disable the warnings
 	# spefically for smartmatch, if perl is v5.18 or newer.
-	no warnings 'experimental::smartmatch';
-}
+#	no warnings 'experimental::smartmatch';
+#}
 use feature qw( switch );
 
 use lib "/usr/lib/smoothwall";
@@ -24,9 +24,9 @@ use File::Find;
 use Getopt::Long;
 use Term::ANSIColor qw( colored );
 
-my ($flag);
+my ($__flag__);
 GetOptions(
-	'R|rules-group=s'	=> \$flag,
+	'R|rules-group=s'	=> \$__flag__,
 );
 
 sub show_help() {
@@ -48,7 +48,7 @@ EOS
 }
 
 # If we gpo any farther without the flag defined, we're just wasting memory.
-if ((!defined($flag)) || ($flag eq '')) { &show_help() && die colored("\n-R option required to specify rule group to update.  See help.\n", "red"); }
+if ((!defined($__flag__)) || ($__flag__ eq '')) { &show_help() && die colored("\n-R option required to specify rule group to update.  See help.\n", "red"); }
 
 our @months = qw( Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec );
 our @weekDays = qw( Sun Mon Tue Wed Thu Fri Sat );
@@ -83,7 +83,7 @@ sub get_the_time() {
 	my ($second, $minute, $hour, $dayOfMonth, $monthIndex, $yearOffset, $dayOfWeekIndex, $dayOfYear, $dayLightSavings) = localtime();
 	my $year = 1900 + $yearOffset;
 	if ($dayOfMonth < 10 ) { $dayOfMonth = "0$dayOfMonth"; }
-	if ($flag eq 'ADDTOR') {
+	if ((defined($flag)) && ($flag eq 'ADDTOR')) {
 		# need to start counting from 1 here
 		# so bump the index a notch
 		$monthIndex++;
@@ -143,7 +143,7 @@ sub do_ruleage_closeout() {
 	open FILE, ">$Ruleage{$flag}" or die "Couldn't open $Ruleage{$flag} file for writing: $! \n";
 	print FILE "$currentTime";
 	close FILE or die "Couldn't close $Ruleage{$flag} file: $! \n";
-	$newest_file = &get_newest("$swroot/snort/rules");
+	$newest_file = &get_newest($__flag__, "$swroot/snort/rules");
 	&write_log("Locating newest ET rules file: $newest_file");
 	my ($a_stamp, $m_stamp) = (stat($newest_file))[8,9];
 	&write_log("Collecting $newest_file\'s time stamps: ");
@@ -275,7 +275,7 @@ while ($errormessage) {
 			&write_log("Attempt $id: $tr{'unable to fetch rules'}");
 			&write_log("Reason: $errormessage");
 		} else {
-			&do_ruleage_closeout();
+			&do_ruleage_closeout($__flag__);
 
 			&write_log("Updating sid-msg.map");
 			system("$GAR_Home_dir/usr/bin/make-sidmap.pl");
