@@ -41,7 +41,7 @@ sub get_the_time() {
 	if ($hour < 10) { $hour = "0$hour"; }
 	if ($minute < 10) { $minute = "0$minute"; }
 	if ($second < 10) { $second = "0$second"; }
-	$theTime = "$weekDays[$dayOfWeekIndex] $months[$dayOfMonthIndex] $dayOfMonth $year $hour:$minute:$second";
+	my $theTime = "$weekDays[$dayOfWeekIndex] $months[$monthIndex] $dayOfMonth $year $hour:$minute:$second";
 	return $theTime;
 }
 
@@ -53,7 +53,7 @@ sub get_newest() {
 	# written even better.
 	File::Find::find(
 		sub {
-			my $name = $Fie::Find::name;
+			my $name = $File::Find::name;
 			# we only want emerging*.rules files
 			if ($name =~ /emerging.*?\.rules/) {
 				$files{$name} = (stat($name))[9]if ( -f $name );
@@ -70,8 +70,8 @@ sub get_newest() {
 sub do_ruleage_closeout() {
 	my $newest_file = 'unknown';
 	&write_log("Updating $ET_ruleage file");
-	$currentTime = &get_the_time();
-	&write_log("Collecting current update time: " . &currentTime );
+	my $currentTime = &get_the_time();
+	&write_log("Collecting current update time: " . $currentTime );
 	&write_log("Storing update time: " . $currentTime );
 	open FILE, ">$ET_ruleage" or die "Couldn't open $ET_ruleage file for writing: $! \n";
 	print FILE "$currentTime";
@@ -86,13 +86,13 @@ sub do_ruleage_closeout() {
 	&write_log("Storing time stamps to $ET_ruleage.");
 	utime $a_stamp, $m_stamp, $ET_ruleage;
 	&write_log("Verifying $ET_ruleage\'s time stamps:");
-	undef($a_stamp, $m_stamp);
+	undef($a_stamp); undef($m_stamp);
 	($a_stamp, $m_stamp) = (stat($ET_ruleage))[8,9];
 	&write_log("  $a_stamp  $m_stamp");
 	&write_log("  ".scalar(localtime($a_stamp)));
 	&write_log("  ".scalar(localtime($m_stamp)));
 	&write_log("Setting $ET_ruleage ownership to nobody:nobody");
-	chown('nobody', 'nobody', $ET_ruleage):
+	chown('nobody', 'nobody', $ET_ruleage);
 }
 
 &write_log("-------------------------------------------------------------------");
@@ -112,11 +112,12 @@ if ($snortsettings{'ENABLE_SNORT'} eq 'off') {
 
 # start snort version query
 open SNORT, "/usr/bin/snort -V 2>&1 |" or die "Couldn't open snort: $! \n";
-my ($display_version, $sub1, $sub2, $sub3, $sub4);
+my ($snort_version, $display_version, $sub1, $sub2, $sub3, $sub4);
 while (my $line = <SNORT>) {
 	chomp($line);
 	if ($line =~ /Version\s+(.*)/) {
 		($display_version, $sub1, $sub2, $sub3, $sub4) = split(/ /, $1);
+		$snort_version = $display_version;
 		$display_version = " $sub1 $sub2 $sub3 $sub4";
 	}
 }
@@ -149,11 +150,11 @@ while ($errormessage) {
 	$errormessage = '';
 	while (my $line = <FD>) {
 		chomp($line);
-		if ($line =~ /ERROR 403: \s+(.*)/i {
+		if ($line =~ /ERROR 403: \s+(.*)/i) {
 			$errormessage = $1;
 		}
-		if ($line =~ /ERROR 404:\s+(.*)/i {
-			$erromessgae = $1;
+		if ($line =~ /ERROR 404:\s+(.*)/i) {
+			$errormessage = $1;
 		}
 		&write_log("    wget: $line");
 	}
