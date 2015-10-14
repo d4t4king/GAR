@@ -175,7 +175,7 @@ sub find_tor_routers() {
 }
 
 &write_log("-------------------------------------------------------------------");
-&write_log("ET SNORT Rules Auto-Updater - Starting\n");
+&write_log("$__flag__ SNORT Rules Auto-Updater - Starting\n");
 &write_log("Loading SNORT settings");
 
 my %snortsettings;
@@ -313,6 +313,6 @@ if (-e $tmpdir && -d $tmpdir) {
 	close FD or die "Couldn't close pipe to rm: $! \n";
 }
 
-&write_log("ET SNORT Rules Auto-Updater - complete");
+&write_log("$__flag__ SNORT Rules Auto-Updater - complete");
 
 __DATA__
