@@ -14,7 +14,7 @@ use File::Find;
 our @months = qw( Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec );
 our @weekDays = qw( Sun Mon Tue Wed Thu Fri Sat );
 
-my $GAR_Home-dir = "$swroot/mods/GAR";
+my $GAR_Home_dir = "$swroot/mods/GAR";
 our $ET_ruleage = "$swroot/snort/ET_ruleage";
 our $logfile = "/var/log/snort/autoupdate-ET.log";
 my $tmpdir = "/tmp/ET-tmp";
@@ -122,3 +122,117 @@ while (my $line = <SNORT>) {
 }
 close SNORT or die "Couldn't close snort command: $! \n";
 
+my ($ETver1, $ETver2, $ETver3, $ETver4) = split(/\./, $snort_version);
+$snort_version = join(".", $ETver1, $ETver2, $ETver3);
+&write_log("Working with snort $display_version - [$snort_version]");
+
+my $curdir = getcwd();
+my $url = 'http://rules.emergingthreats.net/open-nogpl/snort-'.$snort_version.'/emerging.rules.tar.gz';
+
+unless ( -e $tmpdir && -d $tmpdir ) {
+	&write_log("Creating tmp directory $tmpdir");
+	unless (mkdir($tmpdir)) {
+		&write_log("Uable to create directory $tmpdir\: $! ");
+		die "Unable to create directory ($tmpdir): $! \n";
+	}
+}
+
+&write_log("Changing current directory to $tmpdir.");
+chdir($tmpdir);
+
+my $id = 0;
+while ($errormessage) {
+	$id++;
+	
+	&write_log("Executing wget");
+	open FD, "/usr/bin/wget $url 2>&1 |" or die "Couldn't open pipe to wget: $! \n";
+	$errormessage = '';
+	while (my $line = <FD>) {
+		chomp($line);
+		if ($line =~ /ERROR 403: \s+(.*)/i {
+			$errormessage = $1;
+		}
+		if ($line =~ /ERROR 404:\s+(.*)/i {
+			$erromessgae = $1;
+		}
+		&write_log("    wget: $line");
+	}
+	close FD, or die "Couldn't close pipe to wget: $! \n";
+
+	if ($?) {
+		&write_log("Attempt $id: $tr{'unable to fetch rules'}");
+		&write_log("Reason: $errormessage");
+		if (($errormessage eq 'Not found.') || ($errormessage eq 'Forbidden.')) {
+			&write_log("Will not try again...");
+		} else {
+			if (((defined($errormessage)) && ($errormessage ne '')) && ($id < 7)) {
+				&write_log("Will try again in 5 minutes...");
+				sleep 300;
+			}
+		}
+	} else {
+		&write_log("Executing tar");
+		open FD, "/usr/bin/tar xvf emerging.rules.tar.gz 2>&1 |" or die "Couldn't open pipe to tar: $! \n";
+		while (my $line = <FD>) {
+			chomp($line);
+			&write_log("    tar: $line");
+		}
+		close FD or die "Couldn't close pipe to tar: $! \n";
+
+		&write_log("Changing current directory to $swroot/snort/ ");
+		chdir("$swroot/snort/");
+		
+		$url = "dir://$tmpdir/rules";
+
+		&write_log("Executing oinkmaster");
+		open FD, "/usr/bin/oinkmaster.pl -C /usr/lib/smoothwall/oinkmaster.conf -o rules -u $url 2>&1 |" or die "Couldn't open pipe to oinkmaster.pl: $! \n";
+		while (my $line = <FD>) {
+			chomp($line);
+			&write_log("  oinkmaster.pl: $line");
+		}
+		close FD or die "Coulodn't close pipe to oinkmaster.pl: $! \n";
+		if ($?) {
+			&write_log("Attempt $id: $tr{'unable to fetch rules'}");
+			&write_log("Reason: $errormessage");
+		} else {
+			&do_ruleage_closeout();
+
+			&write_log("Updating sid-msg.map");
+			system("$GAR_Home_dir/usr/bin/make-sidmap.pl");
+			&write_log("Updating tor_rules.conf");
+			system("$GAR_Home_dir/usr/bin/findtorrouters");
+			&write_log("Executing oinkmaster to disable tor router rules");
+			open FD, "/usr/bin/oinkmaster.pl -C /usr/lib/smoothwall/oinkmaster.conf -o rules -u $url 2>&1 |" or die "Couldn't open pipe to oinkmaster.pl: $! \n";
+			while (my $line = <FD>) {
+				chomp($line);
+				&write_log("  oinkmaster2:  $line");
+			}
+			close FD or die "Couldn't close pipe to oinkmaster.pl: $! \n";
+			
+			&write_log("Setting rules ownership to nobody:nobody");
+			chown("nobody:nobody", "$swroot/snort/rules/emerging*");
+			&write_log("Restarting snort");
+			my $success = message('snortrestart');
+			if (!defined($success)) { $errormessage = 'Unable to restart snort - see /var/log/messages for details'; }
+			if ($errormessage) { &write_log($errormessage); }
+			undef($errormessage);
+		}
+	}
+}
+
+chdir($curdir);
+
+EXIT:
+if (-e $tmpdir && -d $tmpdir) {
+	&write_log("Removing tmp directory");
+	open FD, "/bin/rm -rvf $tmpdir 2>&1 |" or die "Couldn't open pipe to rm: $! \n";
+	while (my $line = <FD>) {
+		chomp($line);
+		&write_log("    rm: $line");
+	}
+	close FD or die "Couldn't close pipe to rm: $! \n";
+}
+
+&write_log("ET SNORT Rules Auto-Updater - complete");
+
+__DATA__
