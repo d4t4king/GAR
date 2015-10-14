@@ -2,7 +2,16 @@
 
 use strict;
 use warnings;
-no warnings 'experimental::smartmatch';
+# perl 5.10 and later is required for the 'use feature' feature.  This gives 
+# us "switch" and "say" functionality.  At this point, we really only care
+# about th "switch" (given/when) capability.
+require 5.010001;
+if ($OLD_PERL_VERSION -ge '5.018000') {
+	# perl 5.18 and later considers "smarmatch" to be an experimental feature,
+	# and warns profusely, if warnings are enabled.  So disable the warnings
+	# spefically for smartmatch, if perl is v5.18 or newer.
+	no warnings 'experimental::smartmatch';
+}
 use feature qw( switch );
 
 use lib "/usr/lib/smoothwall";
