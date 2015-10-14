@@ -64,7 +64,6 @@ our $tmpdir = "/tmp/tmp";
 our (%usr2uid, %grp2gid);
 
 sub get_uid() {
-	my $user = shift(@_);
 	open PWD, "</etc/passwd" or die "Couldn't open passwd file for reading: $! \n";
 	while (my $line = <PWD>) {
 		my ($u,$id) = (split(/\:/, $line))[0,2];
@@ -74,7 +73,6 @@ sub get_uid() {
 }
 
 sub get_gid() {
-	my $grp = shift(@_);
 	open GRP, "</etc/group" or die "Couldn't open group file for reading: $! \n";
 	while (my $line = <GRP>) {
 		my ($g,$id) = (split(/\:/, $line))[0,2];
@@ -180,6 +178,8 @@ sub do_ruleage_closeout() {
 	&write_log("  ".scalar(localtime($a_stamp)));
 	&write_log("  ".scalar(localtime($m_stamp)));
 	&write_log("Setting $Ruleage{$flag} ownership to nobody:nobody");
+	&write_log("  UID for 'nobody': $usr2uid{'nobody'}");
+	&write_log("  GID for 'nobody': $grp2gid{'nobody'}");
 	chown($usr2uid{'nobody'}, $grp2gid{'nobody'}, $Ruleage{$flag});
 }
 
@@ -195,6 +195,10 @@ sub find_tor_routers() {
 	
 }
 
+##################################################################################
+# Start of main script
+##################################################################################
+&get_uid(); &get_gid();
 &write_log("-------------------------------------------------------------------");
 &write_log("$__flag__ SNORT Rules Auto-Updater - Starting\n");
 &write_log("Loading SNORT settings");
