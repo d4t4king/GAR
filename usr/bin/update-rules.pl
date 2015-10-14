@@ -61,6 +61,27 @@ our %Ruleage = (
 );
 our $logfile = "/var/log/snort/autoupdate-rules.log";
 our $tmpdir = "/tmp/tmp";
+our (%usr2uid, %grp2gid);
+
+sub get_uid() {
+	my $user = shift(@_);
+	open PWD, "</etc/passwd" or die "Couldn't open passwd file for reading: $! \n";
+	while (my $line = <PWD>) {
+		my ($u,$id) = (split(/\:/, $line))[0,2];
+		$usr2uid{$u} = $id;
+	}
+	close PWD or die "Couldn't close passwd file: $! \n";
+}
+
+sub get_gid() {
+	my $grp = shift(@_);
+	open GRP, "</etc/group" or die "Couldn't open group file for reading: $! \n";
+	while (my $line = <GRP>) {
+		my ($g,$id) = (split(/\:/, $line))[0,2];
+		$grp2gid{$g} = $id;
+	}
+	close GRP or die "Couldln't close group file: $! \n";
+}
 
 sub write_log() {
 	my $message = shift(@_);
@@ -159,7 +180,7 @@ sub do_ruleage_closeout() {
 	&write_log("  ".scalar(localtime($a_stamp)));
 	&write_log("  ".scalar(localtime($m_stamp)));
 	&write_log("Setting $Ruleage{$flag} ownership to nobody:nobody");
-	chown('nobody', 'nobody', $Ruleage{$flag});
+	chown($usr2uid{'nobody'}, $grp2gid{'nobody'}, $Ruleage{$flag});
 }
 
 sub add_tor_routers() {
@@ -290,7 +311,7 @@ while ($errormessage) {
 			close FD or die "Couldn't close pipe to oinkmaster.pl: $! \n";
 			
 			&write_log("Setting rules ownership to nobody:nobody");
-			chown("nobody:nobody", "$swroot/snort/rules/emerging*");
+			chown($usr2uid{'nobody'}, $grp2gid{'nobody'}, "$swroot/snort/rules/emerging*");
 			&write_log("Restarting snort");
 			my $success = message('snortrestart');
 			if (!defined($success)) { $errormessage = 'Unable to restart snort - see /var/log/messages for details'; }
