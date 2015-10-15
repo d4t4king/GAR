@@ -232,7 +232,12 @@ $snort_version = join(".", $ETver1, $ETver2, $ETver3);
 &write_log("Working with snort $display_version - [$snort_version]");
 
 my $curdir = getcwd();
-my $url = 'http://rules.emergingthreats.net/open-nogpl/snort-'.$snort_version.'/emerging.rules.tar.gz';
+my %url(
+	'ET'	=> 'http://rules.emergingthreats.net/open-nogpl/snort-'.$snort_version.'/emerging.rules.tar.gz',
+	'VRTC'	=> 'https://s3.amazonaws.com/snort-org/www/rules/community/community-rules.tar.gz',
+	'VRT'	=> 'http://www.snort.org/'.$VRT_get_dir.'/snortrules-snapshot-'.$snort_version.'.tar.gz/'.$snortsettings{'OINK'},
+);
+
 
 unless ( -e $tmpdir && -d $tmpdir ) {
 	&write_log("Creating tmp directory $tmpdir");
@@ -250,7 +255,7 @@ while ($errormessage) {
 	$id++;
 	
 	&write_log("Executing wget");
-	open FD, "/usr/bin/wget $url 2>&1 |" or die "Couldn't open pipe to wget: $! \n";
+	open FD, "/usr/bin/wget $url{$__flag__} 2>&1 |" or die "Couldn't open pipe to wget (URL: $url{$__flag__}): $! \n";
 	$errormessage = '';
 	while (my $line = <FD>) {
 		chomp($line);
