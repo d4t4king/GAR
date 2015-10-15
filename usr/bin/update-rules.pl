@@ -24,9 +24,10 @@ use File::Find;
 use Getopt::Long;
 use Term::ANSIColor qw( colored );
 
-my ($__flag__);
+my ($__flag__, $help);
 GetOptions(
 	'R|rules-group=s'	=> \$__flag__,
+	'h|help'			=> \$help,
 );
 
 sub show_help() {
@@ -47,8 +48,14 @@ EOS
 
 }
 
-# If we gpo any farther without the flag defined, we're just wasting memory.
-if ((!defined($__flag__)) || ($__flag__ eq '')) { &show_help() && die colored("\n-R option required to specify rule group to update.  See help.\n", "red"); }
+if ($help) { &show_help && exit 0; }
+
+# If we go any farther without the flag defined, we're just wasting memory.
+if ((!defined($__flag__)) || ($__flag__ eq '')) { 
+	&show_help() && die colored("\n-R option required to specify rule group to update.  See help.\n", "red"); 
+} elsif ((defined($__flag__)) && ($__flag__ !~ /(?:ET|VRTC|VRT)/)) {
+	&show_help() && die colored("Unrecognized value for \$__flag__: $__flag__ \n", "red");
+}
 
 our @months = qw( Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec );
 our @weekDays = qw( Sun Mon Tue Wed Thu Fri Sat );
@@ -61,6 +68,7 @@ our %Ruleage = (
 );
 our $logfile = "/var/log/snort/autoupdate-rules.log";
 our $tmpdir = "/tmp/tmp";
+our $VRT_get_dir = 'reg-rules';
 our (%usr2uid, %grp2gid);
 
 sub get_uid() {
@@ -125,7 +133,7 @@ sub get_newest() {
 	my $search_regex;
 	given($flag) {
 		when ('ET')		{ $search_regex = qr/emerging.*?\.rules/; }
-		when ('VRTC')	{ $search_regex = qr/comunity\.rules/; }
+		when ('VRTC')	{ $search_regex = qr/community\.rules/; }
 		when ('VRT')	{ $search_regex = qr/.*\.rules/; }
 		default 		{ die "Unexpected rules group flag: $flag \n"; }
 	}
@@ -139,16 +147,13 @@ sub get_newest() {
 			# includes everything EXCEPT local, "community" (VRTC),
 			# and "emerging.*" (ET) rules
 			if ($name =~ /$search_regex/x) {		
-				next if (($flag eq 'VRTC') && ($name =~ /^community\.rules/));
-				next if (($flag eq 'ET') && ($name =~ /^emerging.*\.rules/));
-				$files{$name} = (stat($name))[9]if ( -f $name );
+				next if (($flag eq 'VRT') && ($name =~ /^(?:emerging.*?|community)\.rules/));
+				$files{$name} = (stat($name))[9] if ( -f $name );
 			}
 		}, $dir
 	);
 
-	# This will return the whole array.  But we may
-	# actually want to return a reference to the hash.
-	# FIX ME!!!
+	# Returns the last element in the "keys()" array
 	return (sort { $files{$a} <=> $files{$b} } keys %files )[-1];
 }
 
@@ -163,7 +168,8 @@ sub do_ruleage_closeout() {
 	print FILE "$currentTime";
 	close FILE or die "Couldn't close $Ruleage{$flag} file: $! \n";
 	$newest_file = &get_newest($__flag__, "$swroot/snort/rules");
-	&write_log("Locating newest ET rules file: $newest_file");
+	die "Unable to determine newest rules file for $__flag__ ruleset." if ((!defined($newest_file)) || ($newest_file eq ''));
+	&write_log("Locating newest $__flag__ rules file: $newest_file");
 	my ($a_stamp, $m_stamp) = (stat($newest_file))[8,9];
 	&write_log("Collecting $newest_file\'s time stamps: ");
 	&write_log("  $a_stamp  $m_stamp");
@@ -183,6 +189,8 @@ sub do_ruleage_closeout() {
 	chown($usr2uid{'nobody'}, $grp2gid{'nobody'}, $Ruleage{$flag});
 }
 
+# needs to be fleshed out more
+# depends on populated sid-msg.map file
 sub add_tor_routers() {
 	my $sids_ref = shift(@_);
 	my $atr_date = &get_the_time('ADDTOR');
@@ -191,6 +199,8 @@ sub add_tor_routers() {
 	}
 }
 
+# needs to be fleshed out more
+# depends on populated sid-msg.map file
 sub find_tor_routers() {
 	
 }
@@ -205,6 +215,14 @@ sub find_tor_routers() {
 
 my %snortsettings;
 &readhash("$swroot/snort/settings", \%snortsettings);
+
+if ($__flag__ eq 'VRT') {
+	if ($snortsettings{'OINK'} !~ /^[0-9a-fA-F]{40}$/) {
+		&write_log("The oinkcode must be 40 hex digits long: $snortsettings{'OINK'}");
+		&write_log("Aborting...");
+		goto EXIT;
+	}
+}
 
 my $errormessage = 'start';
 
@@ -222,20 +240,38 @@ while (my $line = <SNORT>) {
 	if ($line =~ /Version\s+(.*)/) {
 		($display_version, $sub1, $sub2, $sub3, $sub4) = split(/ /, $1);
 		$snort_version = $display_version;
+		$snort_version =~ s/\.//g if ($__flag__ eq 'VRT');
 		$display_version = " $sub1 $sub2 $sub3 $sub4";
+		last;
 	}
 }
 close SNORT or die "Couldn't close snort command: $! \n";
 
-my ($ETver1, $ETver2, $ETver3, $ETver4) = split(/\./, $snort_version);
-$snort_version = join(".", $ETver1, $ETver2, $ETver3);
+my ($ETver1, $ETver2, $ETver3, $ETver4); 
+if ($__flag__ eq 'VRT') {
+	while (length($snort_version) < 4) { $snort_version .= "0"; }
+	($ETver1, $ETver2, $ETver3, $ETver4) = split(/\ /, $display_version);
+} else {
+	# ET rules only wants the first 3 anchors of the version number
+	if ($__flag__ eq 'ET') {
+		($ETver1, $ETver2, $ETver3, $ETver4) = split(/\./, $snort_version);
+		$snort_version = join(".", $ETver1, $ETver2, $ETver3);
+	}
+	# Need to see how (if) VRTC is different
+}
 &write_log("Working with snort $display_version - [$snort_version]");
 
 my $curdir = getcwd();
-my %url(
+my %url = (
 	'ET'	=> 'http://rules.emergingthreats.net/open-nogpl/snort-'.$snort_version.'/emerging.rules.tar.gz',
 	'VRTC'	=> 'https://s3.amazonaws.com/snort-org/www/rules/community/community-rules.tar.gz',
 	'VRT'	=> 'http://www.snort.org/'.$VRT_get_dir.'/snortrules-snapshot-'.$snort_version.'.tar.gz/'.$snortsettings{'OINK'},
+);
+
+my %tar = (
+	'ET'	=> 'emerging.rules.tar.gz',
+	'VRTC'	=> 'community-rules.tar.gz',
+	'VRT'	=> "snortules-snapshot-$snort_version.tar.gz"
 );
 
 
@@ -253,82 +289,106 @@ chdir($tmpdir);
 my $id = 0;
 while ($errormessage) {
 	$id++;
-	
-	&write_log("Executing wget");
-	open FD, "/usr/bin/wget $url{$__flag__} 2>&1 |" or die "Couldn't open pipe to wget (URL: $url{$__flag__}): $! \n";
-	$errormessage = '';
-	while (my $line = <FD>) {
-		chomp($line);
-		if ($line =~ /ERROR 403: \s+(.*)/i) {
-			$errormessage = $1;
-		}
-		if ($line =~ /ERROR 404:\s+(.*)/i) {
-			$errormessage = $1;
-		}
-		&write_log("    wget: $line");
-	}
-	close FD, or die "Couldn't close pipe to wget: $! \n";
-
-	if ($?) {
-		&write_log("Attempt $id: $tr{'unable to fetch rules'}");
-		&write_log("Reason: $errormessage");
-		if (($errormessage eq 'Not found.') || ($errormessage eq 'Forbidden.')) {
-			&write_log("Will not try again...");
-		} else {
-			if (((defined($errormessage)) && ($errormessage ne '')) && ($id < 7)) {
-				&write_log("Will try again in 5 minutes...");
-				sleep 300;
-			}
-		}
-	} else {
-		&write_log("Executing tar");
-		open FD, "/usr/bin/tar xvf emerging.rules.tar.gz 2>&1 |" or die "Couldn't open pipe to tar: $! \n";
+	if ($__flag__ =~ /(?:ET|VRTC)/) {
+		&write_log("Executing wget");
+		open FD, "/usr/bin/wget $url{$__flag__} 2>&1 |" or die "Couldn't open pipe to wget (URL: $url{$__flag__}): $! \n";
+		$errormessage = '';
 		while (my $line = <FD>) {
 			chomp($line);
-			&write_log("    tar: $line");
+			# This could be shortened to one line, but reduces readability(?).
+			if ($line =~ /ERROR 403:\s+(.*)/) { $errormessage = $1; }
+			if ($line =~ /ERROR 404:\s+(.*)/) { $errormessage = $1; }
+			if ($line =~ /ERROR 422:\s+(.*)/) { $errormessage = $1; }
+			&write_log("    wget: $line");
 		}
-		close FD or die "Couldn't close pipe to tar: $! \n";
+		close FD, or die "Couldn't close pipe to wget: $! \n";
 
-		&write_log("Changing current directory to $swroot/snort/ ");
-		chdir("$swroot/snort/");
-		
-		$url = "dir://$tmpdir/rules";
-
-		&write_log("Executing oinkmaster");
-		open FD, "/usr/bin/oinkmaster.pl -C /usr/lib/smoothwall/oinkmaster.conf -o rules -u $url 2>&1 |" or die "Couldn't open pipe to oinkmaster.pl: $! \n";
-		while (my $line = <FD>) {
-			chomp($line);
-			&write_log("  oinkmaster.pl: $line");
-		}
-		close FD or die "Coulodn't close pipe to oinkmaster.pl: $! \n";
+		# FIX ME!!!  There should probably be a better test here.  The variable $?
+		# catches the output or status of the last command, which will be the if/else 
+		# statement (assuming I'm following the flow properly) -- which should always
+		# exit '0'.
 		if ($?) {
 			&write_log("Attempt $id: $tr{'unable to fetch rules'}");
 			&write_log("Reason: $errormessage");
+			if (($errormessage eq 'Not found.') || ($errormessage eq 'Forbidden.')) {
+				&write_log("Will not try again...");
+			} else {
+				if (((defined($errormessage)) && ($errormessage ne '')) && ($id < 7)) {
+					&write_log("Will try again in 5 minutes...");
+					sleep 300;
+				}
+			}
 		} else {
-			&do_ruleage_closeout($__flag__);
-
-			&write_log("Updating sid-msg.map");
-			system("$GAR_Home_dir/usr/bin/make-sidmap.pl");
-			&write_log("Updating tor_rules.conf");
-			system("$GAR_Home_dir/usr/bin/findtorrouters");
-			&write_log("Executing oinkmaster to disable tor router rules");
-			open FD, "/usr/bin/oinkmaster.pl -C /usr/lib/smoothwall/oinkmaster.conf -o rules -u $url 2>&1 |" or die "Couldn't open pipe to oinkmaster.pl: $! \n";
+			&write_log("Executing tar");
+			open FD, "/usr/bin/tar xvf $tar{$__flag__} 2>&1 |" or die "Couldn't open pipe to tar: $! \n";
 			while (my $line = <FD>) {
 				chomp($line);
-				&write_log("  oinkmaster2:  $line");
+				&write_log("    tar: $line");
 			}
-			close FD or die "Couldn't close pipe to oinkmaster.pl: $! \n";
-			
-			&write_log("Setting rules ownership to nobody:nobody");
-			chown($usr2uid{'nobody'}, $grp2gid{'nobody'}, "$swroot/snort/rules/emerging*");
-			&write_log("Restarting snort");
-			my $success = message('snortrestart');
-			if (!defined($success)) { $errormessage = 'Unable to restart snort - see /var/log/messages for details'; }
-			if ($errormessage) { &write_log($errormessage); }
-			undef($errormessage);
+			close FD or die "Couldn't close pipe to tar: $! \n";
 		}
+	}		# end if ($__flag__ ... 		
+		
+	&write_log("Changing current directory to $swroot/snort/ ");
+	chdir("$swroot/snort/");
+			
+	my $url = '';
+	given ($__flag__) {
+		when ('ET')		{ $url = "dir://$tmpdir/rules"; }
+		when ('VRTC')	{ $url = "dir://$tmpdir/community-rules"; }
+		when ('VRT')	{ $url = $url{$__flag__}; }
+		default			{ print STDERR colored("You should never get here.", "blue on_white"); }
 	}
-}
+
+	&write_log("Executing oinkmaster");
+	open FD, "/usr/bin/oinkmaster.pl -C /usr/lib/smoothwall/oinkmaster.conf -o rules -u $url 2>&1 |" or die "Couldn't open pipe to oinkmaster.pl: $! \n";
+	while (my $line = <FD>) {
+		chomp($line);
+		# This could be shortened to one line, but reduces readability(?).
+		if ($line =~ /ERROR 403:\s+(.*)/) { $errormessage = $1; }
+		if ($line =~ /ERROR 404:\s+(.*)/) { $errormessage = $1; }
+		if ($line =~ /ERROR 422:\s+(.*)/) { $errormessage = $1; }
+		&write_log("  oinkmaster.pl: $line");
+	}
+	close FD or die "Coulodn't close pipe to oinkmaster.pl: $! \n";
+	if ($?) {
+		&write_log("Attempt $id: $tr{'unable to fetch rules'}");
+		&write_log("Reason: $errormessage");
+		if (($errormessage eq 'Not Found.') ||
+			($errormessage eq 'Forbidden.') ||
+			($errormessage eq 'Unprocessable Entity.')) {
+			&write_log("Will not try again...");
+			last;
+		} else {
+			if ((defined($errormessage)) && ($id < 7)) {
+				&write_log("VRT 15 minute limit in effect.  Will try again in 20 minutes.");
+				sleep 1200;
+			}
+		}
+	} else {
+		&do_ruleage_closeout($__flag__);
+
+		&write_log("Updating sid-msg.map");
+		system("$GAR_Home_dir/usr/bin/make-sidmap.pl");
+		&write_log("Updating tor_rules.conf");
+		system("$GAR_Home_dir/usr/bin/findtorrouters");
+		&write_log("Executing oinkmaster to disable tor router rules");
+		open FD, "/usr/bin/oinkmaster.pl -C /usr/lib/smoothwall/oinkmaster.conf -o rules -u $url 2>&1 |" or die "Couldn't open pipe to oinkmaster.pl: $! \n";
+		while (my $line = <FD>) {
+			chomp($line);
+			&write_log("  oinkmaster2:  $line");
+		}
+		close FD or die "Couldn't close pipe to oinkmaster.pl: $! \n";
+			
+		&write_log("Setting rules ownership to nobody:nobody");
+		chown($usr2uid{'nobody'}, $grp2gid{'nobody'}, "$swroot/snort/rules/emerging*");
+		&write_log("Restarting snort");
+		my $success = message('snortrestart');
+		if (!defined($success)) { $errormessage = 'Unable to restart snort - see /var/log/messages for details'; }
+		if ($errormessage) { &write_log($errormessage); }
+		undef($errormessage);
+	}		# end if ($?)
+}		# end while($erormessage)
 
 chdir($curdir);
 
