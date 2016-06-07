@@ -99,7 +99,7 @@ if ($snortsettings{'ENABLE_SNORT'} eq 'off') {
 }
 
 # start snort version query
-open SNORT, "/usr/bin/snort -V 2>&1 |" or die "Couldn't open snort: $! \n";
+open SNORT, "/usr/bin/snort -V 2>&1 |" or die colored("Couldn't open snort: $! \n", "bold red");
 my ($snort_version, $display_version, $sub1, $sub2, $sub3, $sub4);
 while (my $line = <SNORT>) {
 	chomp($line);
@@ -111,7 +111,7 @@ while (my $line = <SNORT>) {
 		last;
 	}
 }
-close SNORT or die "Couldn't close snort command: $! \n";
+close SNORT or die colored("Couldn't close snort command: $! \n", "bold red");
 
 my ($ETver1, $ETver2, $ETver3, $ETver4); 
 if ($__flag__ eq 'VRT') {
@@ -145,7 +145,7 @@ unless ( -e $tmpdir && -d $tmpdir ) {
 	&write_log("Creating tmp directory $tmpdir");
 	unless (mkdir($tmpdir)) {
 		&write_log("Uable to create directory $tmpdir\: $! ");
-		die "Unable to create directory ($tmpdir): $! \n";
+		die colored("Unable to create directory ($tmpdir): $! \n", "b9old red");
 	}
 }
 
@@ -157,7 +157,7 @@ while ($errormessage) {
 	$id++;
 	if ($__flag__ =~ /(?:ET|VRTC)/) {
 		&write_log("Executing wget");
-		open FD, "/usr/bin/wget $url{$__flag__} 2>&1 |" or die "Couldn't open pipe to wget (URL: $url{$__flag__}): $! \n";
+		open FD, "/usr/bin/wget $url{$__flag__} 2>&1 |" or die colored("Couldn't open pipe to wget (URL: $url{$__flag__}): $! \n", "bold red");
 		$errormessage = '';
 		while (my $line = <FD>) {
 			chomp($line);
@@ -167,7 +167,7 @@ while ($errormessage) {
 			if ($line =~ /ERROR 422:\s+(.*)/) { $errormessage = $1; }
 			&write_log("    wget: $line");
 		}
-		close FD, or die "Couldn't close pipe to wget: $! \n";
+		close FD, or die colored("Couldn't close pipe to wget: $! \n", "bold red");
 
 		# FIX ME!!!  There should probably be a better test here.  The variable $?
 		# catches the output or status of the last command, which will be the if/else 
@@ -186,12 +186,13 @@ while ($errormessage) {
 			}
 		} else {
 			&write_log("Executing tar");
-			open FD, "/usr/bin/tar xvf $tar{$__flag__} 2>&1 |" or die "Couldn't open pipe to tar: $! \n";
+			open FD, "/usr/bin/tar xvf $tar{$__flag__} 2>&1 |" or die colored("Couldn't open pipe to tar: $! \n", "bold red");
 			while (my $line = <FD>) {
 				chomp($line);
+
 				&write_log("    tar: $line");
 			}
-			close FD or die "Couldn't close pipe to tar: $! \n";
+			close FD or die colored("Couldn't close pipe to tar: $! \n", "bold red");
 		}
 	}		# end if ($__flag__ ... 		
 		
@@ -207,7 +208,7 @@ while ($errormessage) {
 	}
 
 	&write_log("Executing oinkmaster");
-	open FD, "/usr/bin/oinkmaster.pl -C /usr/lib/smoothwall/oinkmaster.conf -o rules -u $url 2>&1 |" or die "Couldn't open pipe to oinkmaster.pl: $! \n";
+	open FD, "/usr/bin/oinkmaster.pl -C /usr/lib/smoothwall/oinkmaster.conf -o rules -u $url 2>&1 |" or die colored("Couldn't open pipe to oinkmaster.pl: $! \n", "bold red");
 	while (my $line = <FD>) {
 		chomp($line);
 		# This could be shortened to one line, but reduces readability(?).
@@ -216,7 +217,7 @@ while ($errormessage) {
 		if ($line =~ /ERROR 422:\s+(.*)/) { $errormessage = $1; }
 		&write_log("  oinkmaster.pl: $line");
 	}
-	close FD or die "Coulodn't close pipe to oinkmaster.pl: $! \n";
+	close FD or die colored("Coulodn't close pipe to oinkmaster.pl: $! \n", "bold red");
 	if ($?) {
 		&write_log("Attempt $id: $tr{'unable to fetch rules'}");
 		&write_log("Reason: $errormessage");
@@ -239,12 +240,12 @@ while ($errormessage) {
 		&write_log("Updating tor_rules.conf");
 		system("$GAR_Home_dir/usr/bin/findtorrouters");
 		&write_log("Executing oinkmaster to disable tor router rules");
-		open FD, "/usr/bin/oinkmaster.pl -C /usr/lib/smoothwall/oinkmaster.conf -o rules -u $url 2>&1 |" or die "Couldn't open pipe to oinkmaster.pl: $! \n";
+		open FD, "/usr/bin/oinkmaster.pl -C /usr/lib/smoothwall/oinkmaster.conf -o rules -u $url 2>&1 |" or die colored("Couldn't open pipe to oinkmaster.pl: $! \n", "bold red");
 		while (my $line = <FD>) {
 			chomp($line);
 			&write_log("  oinkmaster2:  $line");
 		}
-		close FD or die "Couldn't close pipe to oinkmaster.pl: $! \n";
+		close FD or die colored("Couldn't close pipe to oinkmaster.pl: $! \n", "bold red");
 			
 		&write_log("Setting rules ownership to nobody:nobody");
 		chown($usr2uid{'nobody'}, $grp2gid{'nobody'}, "$swroot/snort/rules/emerging*");
@@ -261,12 +262,12 @@ chdir($curdir);
 EXIT:
 if (-e $tmpdir && -d $tmpdir) {
 	&write_log("Removing tmp directory");
-	open FD, "/bin/rm -rvf $tmpdir 2>&1 |" or die "Couldn't open pipe to rm: $! \n";
+	open FD, "/bin/rm -rvf $tmpdir 2>&1 |" or die colored("Couldn't open pipe to rm: $! \n", "bold red");
 	while (my $line = <FD>) {
 		chomp($line);
 		&write_log("    rm: $line");
 	}
-	close FD or die "Couldn't close pipe to rm: $! \n";
+	close FD or die colored("Couldn't close pipe to rm: $! \n", "bold red");
 }
 
 &write_log("$__flag__ SNORT Rules Auto-Updater - complete");
@@ -286,12 +287,12 @@ sub get_uid() {
 
 # gets the GID o f the groups on the system and populates the %grp2gid hash
 sub get_gid() {
-	open GRP, "</etc/group" or die "Couldn't open group file for reading: $! \n";
+	open GRP, "</etc/group" or die colored("Couldn't open group file for reading: $! \n", "bold red");
 	while (my $line = <GRP>) {
 		my ($g,$id) = (split(/\:/, $line))[0,2];
 		$grp2gid{$g} = $id;
 	}
-	close GRP or die "Couldln't close group file: $! \n";
+	close GRP or die colored("Couldln't close group file: $! \n", "bold red");
 }
 
 sub write_log() {
@@ -300,9 +301,9 @@ sub write_log() {
 	if ($day < 10) {
 		$day = " $day";
 	}
-	open LOG, ">>$logfile" or die "Couldn't open $logfile for appending: $! \n";
+	open LOG, ">>$logfile" or die colored("Couldn't open $logfile for appending: $! \n", "bold red");
 	print LOG "$month $day $time $message\n";
-	close LOG or die "Couldn't close log after appending: $! \n";
+	close LOG or die colored("Couldn't close log after appending: $! \n", "bold red");
 }
 
 # return a simplified date, if called from the add_tor_routers funtion
@@ -334,14 +335,14 @@ sub get_the_time() {
 sub get_newest() {
 	my $flag = shift(@_);
 	my $dir = shift(@_);
-	( -d $dir ) or die "get_newest: '$dir' is not a directory...\n";
+	( -d $dir ) or die colored("get_newest: '$dir' is not a directory...\n", "bold red");
 	our %files;
 	my $search_regex;
 	given($flag) {
 		when ('ET')		{ $search_regex = qr/emerging.*?\.rules/; }
 		when ('VRTC')	{ $search_regex = qr/community\.rules/; }
 		when ('VRT')	{ $search_regex = qr/.*\.rules/; }
-		default 		{ die "Unexpected rules group flag: $flag \n"; }
+		default 		{ die colored("Unexpected rules group flag: $flag \n", "bold red"); }
 	}
 	# my File::Find-fu is _VERY_ rusty, but this probably could be
 	# written even better.
@@ -370,11 +371,11 @@ sub do_ruleage_closeout() {
 	my $currentTime = &get_the_time();
 	&write_log("Collecting current update time: " . $currentTime );
 	&write_log("Storing update time: " . $currentTime );
-	open FILE, ">$Ruleage{$flag}" or die "Couldn't open $Ruleage{$flag} file for writing: $! \n";
+	open FILE, ">$Ruleage{$flag}" or die colored("Couldn't open $Ruleage{$flag} file for writing: $! \n", "bold red");
 	print FILE "$currentTime";
-	close FILE or die "Couldn't close $Ruleage{$flag} file: $! \n";
+	close FILE or die colored("Couldn't close $Ruleage{$flag} file: $! \n", "bold red");
 	$newest_file = &get_newest($__flag__, "$swroot/snort/rules");
-	die "Unable to determine newest rules file for $__flag__ ruleset." if ((!defined($newest_file)) || ($newest_file eq ''));
+	die colored("Unable to determine newest rules file for $__flag__ ruleset.", "bold red") if ((!defined($newest_file)) || ($newest_file eq ''));
 	&write_log("Locating newest $__flag__ rules file: $newest_file");
 	my ($a_stamp, $m_stamp) = (stat($newest_file))[8,9];
 	&write_log("Collecting $newest_file\'s time stamps: ");
